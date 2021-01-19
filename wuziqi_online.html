@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<title></title>
+	</head>
+	<body>
+		<canvas id="myCanvas" width="420" height="420"></canvas>
+	</body>
+	<script type="text/javascript">
+		class Chess {
+			constructor(canvasId) {
+				this.c = null
+				this.ctx = null
+				this.init(canvasId)
+				this.row = new Map()
+				this.role = 'BLACK'
+				this.watchWin = {
+					'BLACK': 0,
+					'WHITE': 0
+                }
+                this.isEnd = false
+                this.canSetPie = false
+                this.websocket = null
+                this.onlineWebSocket()
+                this.myRole = ''
+			}
+			// 初始化canvas
+			init(canvasId) {
+				if (Object.prototype.toString.call(canvasId) !== "[object String]") alert('canvasId错误')
+				this.c = document.getElementById(canvasId);
+				this.ctx = this.c.getContext("2d");
+			}
+			// 画棋盘
+			drawBoard() {
+				this.c.style.cursor = 'pointer'
+				this.ctx.fillStyle = '#d4a465';
+				this.ctx.fillRect(0,0,420,420);
+				for(let i = 0; i < 15; i++) {
+					this.setPanelColor('#ffffff')
+					this.ctx.moveTo(0, i * 30);
+					this.ctx.lineTo(420, i * 30);
+					this.ctx.moveTo(i * 30, 0);
+					this.ctx.lineTo(i * 30, 420);
+					this.ctx.stroke();
+				}
+				this.watchClick()
+            }
+            // 在线监听
+            onlineWebSocket() {
+                this.websocket = new WebSocket("ws://175.24.0.132:4455/")
+                this.websocket.onopen = function() {
+                    console.log("websocket open")
+                }
+                this.websocket.onmessage = function(e) {
+                    console.log(e.data);
+                    var e = JSON.parse(e.data)
+                    if(e.type === 'message') {
+                        var mes = e.data;
+                        console.log('落子了', mes.split(','))
+                        this.role = mes.split(',')[2]
+                        console.log(this.role)
+                        this.drawPie(mes.split(',')[0], mes.split(',')[1])
+                    }
+                }.bind(this)
+                this.websocket.onclose = function() {
+                    console.log("websocket close");
+                }
+            }
+			// 监听点击
+			watchClick() {
+				this.c.addEventListener('click', function(event) {
+                    if (this.myRole && this.myRole !== this.role) {
+                        alert('没轮到你别急。。。')
+                    } else if (this.isEnd) {
+                        alert('结束了。。。')
+                    } else {
+                        // console.log(event)
+                        let resX, resY
+                        if((event.offsetX%30 >10 && event.offsetX%30 < 20) || (event.offsetY%30 >10 && event.offsetY%30 < 20)) {
+                            alert('无法落子')
+                        } else {
+                            if(event.offsetX%30 <= 10) {
+                                resX = event.offsetX - event.offsetX%30
+                            }
+                            if(20 < event.offsetX%30 && event.offsetX%30 <= 30) {
+                                resX = Math.ceil(event.offsetX/30)*30
+                            }
+                            if(event.offsetY%30 <= 10) {
+                                resY = event.offsetY - event.offsetY%30
+                            }
+                            if(20 < event.offsetY%30  && event.offsetY%30 <= 30) {
+                                resY = Math.ceil(event.offsetY/30)*30
+                            }
+                            // 发送落子位置
+                            this.websocket.send(`${resX},${resY},${this.role}`)
+                            if (!this.myRole) {
+                                this.myRole = this.role
+                            }
+                            // this.drawPie(resX, resY)
+                        }
+                    }
+				}.bind(this), false);
+			}
+			// 画棋子
+			drawPie(resX, resY) {
+                console.log(resX, resY, this.role, 'resx, resY, this.role resx, resY, this.role')
+				const rowX = Number(resX)
+				const rowY = Number(resY)
+				if(this.row.has([rowX, rowY].toString())) {
+					alert('已经有棋子')
+				} else {
+					this.sound()
+                    let dis = this.role === 'BLACK' ? 5 : 15
+                    console.log(dis, this.role === 'BLACK')
+					let gird = this.ctx.createRadialGradient(rowX,rowY,10,rowX+dis,rowY+dis,10)
+					gird.addColorStop(0.1,"#fff");
+					gird.addColorStop(1,"#000");
+					this.row.set([rowX, rowY].toString(),this.role)
+					console.log(this.row)
+					this.ctx.beginPath();
+					this.ctx.arc(rowX,rowY,10,0,2*Math.PI);
+					this.ctx.fillStyle = gird;
+                    this.ctx.fill();
+					this.isWin(this.role, rowX, rowY)
+					this.role = this.role === 'BLACK' ? 'WHITE' : 'BLACK'
+				}
+			}
+			// 更改线条颜色
+			setPanelColor(color) {
+				this.ctx.strokeStyle=color
+			}
+			// 落字音效
+			sound() {
+				let audio = new Audio()
+				audio.src = 'http://hgqweb.cn/5390.mp3'
+				audio.play()
+				audio = null
+			}
+			// 计算输赢 按照四个方向检测连接的最大长度
+			isWin(role, x, y) {
+				let xManLength = 0
+				let yManLength = 0
+				let lManLength = 0
+                let rManLength = 0
+                // 用于垂直水平方向
+				let teapY = y
+				let teapX = x
+                
+                // 用于右上到左下方向
+				let l_teapX = x
+				let l_teapY = y
+				let ll_teapX = x - 30
+				let ll_teapY = y + 30
+
+                // 用于左上到右下方向
+				let r_teapX = x
+				let r_teapY = y
+				let rr_teapX = x + 30
+				let rr_teapY = y + 30
+				// 垂直方向
+				while(this.row.get([teapX,y].toString()) && this.row.get([teapX,y].toString()) === role) {
+					yManLength++
+					y += 30
+				}
+				y = teapY - 30
+				while(this.row.get([teapX,y].toString()) && this.row.get([teapX,y].toString()) === role) {
+					yManLength++
+					y -= 30
+				}
+				// 水平方向
+				while(this.row.get([x,teapY].toString()) && this.row.get([x,teapY].toString()) === role) {
+					xManLength++
+					x += 30
+				}
+				x = teapX - 30
+				while(this.row.get([x,teapY].toString()) && this.row.get([x,teapY].toString()) === role) {
+					xManLength++
+					x -= 30
+				}
+				// 右上到左下方向
+				while(this.row.get([l_teapX,l_teapY].toString()) && this.row.get([l_teapX,l_teapY].toString()) === role) {
+					lManLength++
+					l_teapX += 30
+					l_teapY -= 30
+				}
+				while(this.row.get([ll_teapX,ll_teapY].toString()) && this.row.get([ll_teapX,ll_teapY].toString()) === role) {
+					lManLength++
+					ll_teapX -= 30
+					ll_teapY += 30
+				}
+
+				// 左上到右下方向
+				while(this.row.get([r_teapX,r_teapY].toString()) && this.row.get([r_teapX,r_teapY].toString()) === role) {
+					rManLength++
+					r_teapX -= 30
+					r_teapY -= 30
+				}
+				while(this.row.get([rr_teapX,rr_teapY].toString()) && this.row.get([rr_teapX,rr_teapY].toString()) === role) {
+					rManLength++
+					rr_teapX += 30
+					rr_teapY += 30
+				}
+				this.watchWin[role] = Math.max.apply(null, [xManLength, yManLength, lManLength, rManLength])
+				console.log(this.watchWin[role], role)
+				if (this.watchWin[role] === 5) {
+					alert(role === 'BLACK' ? '黑棋胜' : '白棋胜')
+                    // window.location.reload()
+                    this.isEnd = true
+				}
+			}
+		}
+		
+		var chess = new Chess('myCanvas')
+		chess.drawBoard()
+	</script>
+</html>
